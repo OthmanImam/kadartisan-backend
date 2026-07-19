@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ARTISAN
+  ADMIN
+}
+
+enum OtpChannel {
+  PHONE
+  EMAIL
+  WHATSAPP
+}
+
+enum ArtisanStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ServiceRequestStatus {
+  PENDING
+  MATCHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+
+enum AppealStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id          String   @id @default(uuid()) @db.Uuid
+  fullName    String
+  phoneNumber String   @unique
+  email       String?  @unique
+  password    String
+  isVerified  Boolean  @default(false)
+  role        Role     @default(USER)
+
+  // Security
+  failedLoginAttempts Int       @default(0)
+  lockUntil           DateTime?
+  refreshToken        String?
+
+  // Moderation
+  suspendedUntil   DateTime?
+  suspensionReason String?
+  bannedAt         DateTime?
+  banReason        String?
+
+  createdAt DateTime @default(now())
+
+  // Role profiles (1:1, at most one of each)
+  adminProfile    AdminProfile?
+  customerProfile CustomerProfile?
+  artisanProfile  ArtisanProfile?
+
+  // Account-level relations
+  otps    Otp[]
+  appeals Appeal[]
+}
+
+
+model AdminProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+
+model CustomerProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  serviceRequests ServiceRequest[] @relation("ServiceRequestCustomer")
+
+  @@index([userId])
+}
+
+
+model ArtisanProfile {
+  id              String  @id @default(uuid()) @db.Uuid
+  userId          String  @unique @db.Uuid
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  state           String
+  lga             String?
+  workshopAddress String?
+
+  
+  artisanStatus          ArtisanStatus @default(PENDING)
+  artisanApprovedAt      DateTime?
+  artisanRejectionReason String?
+
+  skills           ArtisanSkill[]
+  acceptedRequests ServiceRequest[] @relation("ServiceRequestArtisan")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([artisanStatus])
+}
+
+model Skill {
+  id       String         @id @default(uuid()) @db.Uuid
+  name     String         @unique
+  category String?
+  artisans ArtisanSkill[]
+
+  @@index([name])
+}
+
+model ArtisanSkill {
+  id        String         @id @default(uuid()) @db.Uuid
+  artisanId String         @db.Uuid
+  artisan   ArtisanProfile @relation(fields: [artisanId], references: [id], onDelete: Cascade)
+  skillId   String         @db.Uuid
+  skill     Skill          @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([artisanId, skillId])
+  @@index([artisanId])
+  @@index([skillId])
+}
+
+
+model ServiceRequest {
+  id         String          @id @default(uuid()) @db.Uuid
+
+  customerId String          @db.Uuid
+  customer   CustomerProfile @relation("ServiceRequestCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+
+  artisanId  String?         @db.Uuid
+  artisan    ArtisanProfile? @relation("ServiceRequestArtisan", fields: [artisanId], references: [id])
+
+  title         String
+  description   String
+  image         String?
+  state         String
+  lga           String?
+  skillRequired String
+  budget        Float?
+  urgency       String?
+  contactInfo   String?
+
+  status    ServiceRequestStatus @default(PENDING)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([state, skillRequired, status])
+  @@index([customerId])
+  @@index([artisanId])
+}
+
+model Appeal {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @unique @db.Uuid
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reason    String
+  status    AppealStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Otp {
+  id         String     @id @default(uuid()) @db.Uuid
+  identifier String
+  channel    OtpChannel
+  code       String
+  expiresAt  DateTime
+  isUsed     Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+
+  userId String? @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([identifier])
+  @@index([userId])
+}
